@@ -1,0 +1,11 @@
+production:
+  server:     irc.example.com
+  port:       6667
+  nick:       redminebot
+  channel:    '#example'
+
+development:
+  server:     irc.example.com
+  port:       6667
+  nick:       redminebot
+  channel:    '#example'
