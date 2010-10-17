@@ -2,10 +2,17 @@ production:
   server:     irc.example.com
   port:       6667
   nick:       redminebot
+  user:       redminebot
   channel:    '#example'
+  nickserv:
+    nick:     NickServ
+    password: yourpassword
 
 development:
   server:     irc.example.com
   port:       6667
   nick:       redminebot
   channel:    '#example'
+  nickserv:
+    nick:     NickServ
+    password: yourpassword

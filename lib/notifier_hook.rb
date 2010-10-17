@@ -4,17 +4,20 @@ require 'socket'
 
 module RedmineIrcNotifications
   class NotifierHook < Redmine::Hook::Listener
-    @@server  = nil
-    @@port    = nil
-    @@nick    = nil
-    @@channel = nil
+    @@server   = nil
+    @@port     = nil
+    @@nick     = nil
+    @@user     = nil
+    @@channel  = nil
+    @@nickserv = nil
 
     def self.load_options
       options = YAML::load(File.open(File.join(Rails.root, 'config', 'irc.yml')))
       @@server = options[Rails.env]['server']
-      @@port = options[Rails.env]['port'] || 6667
       @@nick = options[Rails.env]['nick']
+      @@user = options[Rails.env]['user']
       @@channel = options[Rails.env]['channel']
+      @@nickserv = options[Rails.env]['nickserv']
     end
 
     def controller_issues_new_after_save(context = { })
@@ -55,22 +58,38 @@ module RedmineIrcNotifications
 
     private
     def speak(message)
-      NotifierHook.load_options unless @@server && @@port && @@nick && @@channel
-
       sock = nil
+      
       begin
-        sock = TCPSocket.open(@@server, @@port)
+        NotifierHook.load_options unless @@server && @@nick && @@user && @@channel
+        raise ArgumentError, 'server, nick, user and channel must be set' if @@server.nil? || @@nick.nil? || @@user.nil? || @@channel.nil?
+        raise ArgumentError, 'NickServ password must be set' if @@nickserv && @@nickserv['password'].nil?
+        
+        sock = TCPSocket.open(@@server, @@port || 6667)
+        sock.puts "USER #{@@user} 0 * #{@@user}"
+        
+        if @@nickserv
+          nickserv_nick = @@nickserv['nick'] || 'NickServ'
+
+          sock.puts "NICK #{random_nick}"
+          sock.puts "PRIVMSG #{nickserv_nick} :IDENTIFY #{@@nick} #{@@nickserv['password']}"
+          sock.puts "PRIVMSG #{nickserv_nick} :GHOST #{@@nick}"
+          wait_for_ghost(sock)
+        end
+
         sock.puts "NICK #{@@nick}"
-        sock.puts "USER #{@@nick} 0 * #{@@nick}"
         sock.puts "PRIVMSG #{@@channel} :#{message}"
         sock.puts "QUIT"
-        until sock.eof? do
-          sock.gets
-        end
+
       rescue => e
         logger.error "Error during IRC notification: #{e.message}"
       ensure
-        sock.close if sock
+        if sock
+          until sock.eof? do
+            sock.gets
+          end
+          sock.close
+        end
       end
     end
 
@@ -78,6 +97,16 @@ module RedmineIrcNotifications
       return if text == nil
       words = text.split()
       words[0..(length-1)].join(' ') + (words.length > length ? end_string : '')
+    end
+
+    def random_nick(length = 32)
+      (0...length).map{65.+(rand(25)).chr}.join
+    end
+
+    def wait_for_ghost(sock)
+      until sock.eof? do
+        break if sock.gets =~ /has been ghosted/
+      end
     end
   end
 end

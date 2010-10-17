@@ -5,6 +5,8 @@ A Redmine plugin to display activity notifications on IRC. Based on http://githu
 
 **Note:** The plugin won't actually `JOIN` your channel, so you need to either set `-n` on the channel or modify the code.
 
+**Note 2:** If your IRC network supports NickServ, strongly consider registering the nickname set in `irc.yml` (see `irc.yml.example`) to avoid conflicts.
+
 Installation
 ------------
 
