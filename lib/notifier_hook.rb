@@ -11,6 +11,8 @@ module RedmineIrcNotifications
     @@channel  = nil
     @@nickserv = nil
 
+    @@mutex = Mutex.new
+
     def self.load_options
       options = YAML::load(File.open(File.join(Rails.root, 'config', 'irc.yml')))
       @@server = options[Rails.env]['server']
@@ -72,25 +74,27 @@ module RedmineIrcNotifications
           raise ArgumentError, 'server, nick, user and channel must be set' if @@server.nil? || @@nick.nil? || @@user.nil? || @@channel.nil?
           raise ArgumentError, 'NickServ password must be set' if @@nickserv && @@nickserv['password'].nil?
 
-          sock = TCPSocket.open(@@server, @@port || 6667)
-          sock.puts "USER #{@@user} 0 * #{@@user}"
-          sock.puts "NICK #{@@nick}"
+          @@mutex.synchronize do
+            sock = TCPSocket.open(@@server, @@port || 6667)
+            sock.puts "USER #{@@user} 0 * #{@@user}"
+            sock.puts "NICK #{@@nick}"
 
-          unless nick_available?(sock)
-            if @@nickserv
-              nickserv_nick = @@nickserv['nick'] || 'NickServ'
+            unless nick_available?(sock)
+              if @@nickserv
+                nickserv_nick = @@nickserv['nick'] || 'NickServ'
 
-              sock.puts "NICK #{random_nick}"
-              sock.puts "PRIVMSG #{nickserv_nick} :GHOST #{@@nick} #{@@nickserv['password']}"
-              wait_for_nick_to_become_available(sock)
-              sock.puts "NICK #{@@nick}"
-            else
-              raise "Nick \"#{@@nick}\" was not available, and NickServ is not here to help us."
+                sock.puts "NICK #{random_nick}"
+                sock.puts "PRIVMSG #{nickserv_nick} :GHOST #{@@nick} #{@@nickserv['password']}"
+                wait_for_nick_to_become_available(sock)
+                sock.puts "NICK #{@@nick}"
+              else
+                raise "Nick \"#{@@nick}\" was not available, and NickServ is not here to help us."
+              end
             end
-          end
 
-          sock.puts "PRIVMSG #{@@channel} :#{message}"
-          sock.puts "QUIT"
+            sock.puts "PRIVMSG #{@@channel} :#{message}"
+            sock.puts "QUIT"
+          end
 
         rescue => e
           logger.error "Error during IRC notification: #{e.message}"
