@@ -7,6 +7,9 @@ production:
   nickserv:
     nick:     NickServ
     password: yourpassword
+  throttle:
+    interval: 5
+    count:    3
 
 development:
   server:     irc.example.com
@@ -16,3 +19,6 @@ development:
   nickserv:
     nick:     NickServ
     password: yourpassword
+  throttle:
+    interval: 5
+    count:    3

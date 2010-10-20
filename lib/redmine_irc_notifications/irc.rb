@@ -8,23 +8,48 @@ module RedmineIrcNotifications
     @@user     = nil
     @@channel  = nil
     @@nickserv = nil
+    @@throttle = nil
 
     @@mutex = Mutex.new
+    @@last_disconnect = 0
+    @@throttle_counter = 0
 
     def self.speak(message)
+      return if message.nil? || message.empty?
+
       Thread.new do
-        sock = nil
+        @@mutex.synchronize do
+          begin
+            load_options unless @@server && @@nick && @@user && @@channel
+            raise ArgumentError, 'server, nick, user and channel must be set' if @@server.nil? || @@nick.nil? || @@user.nil? || @@channel.nil?
+            raise ArgumentError, 'NickServ password must be set' if @@nickserv && @@nickserv['password'].nil?
+            raise ArgumentError, 'Throttle count must be >= 1' if @@throttle && @@throttle['count'] && @@throttle['count'].to_i < 1
 
-        begin
-          load_options unless @@server && @@nick && @@user && @@channel
-          raise ArgumentError, 'server, nick, user and channel must be set' if @@server.nil? || @@nick.nil? || @@user.nil? || @@channel.nil?
-          raise ArgumentError, 'NickServ password must be set' if @@nickserv && @@nickserv['password'].nil?
+            if @@throttle && @@throttle['interval']
+              sleep_time = @@throttle['interval'].to_i - (Time.now.to_i - @@last_disconnect)
 
-          @@mutex.synchronize do
+              if sleep_time > 0
+                @@throttle_counter += 1
+
+                if @@throttle && @@throttle['count']
+                  throttle_count = @@throttle['count'].to_i
+                  if @@throttle_counter == throttle_count
+                    message = '(throttled)'
+                  elsif @@throttle_counter > throttle_count
+                    return
+                  end
+                end
+
+                sleep(sleep_time)
+              else
+                @@throttle_counter = 0
+              end
+            end
+
             sock = TCPSocket.open(@@server, @@port || 6667)
             sock.puts "USER #{@@user} 0 * #{@@user}"
             sock.puts "NICK #{@@nick}"
-            
+
             unless nick_available?(sock)
               if @@nickserv
                 nickserv_nick = @@nickserv['nick'] || 'NickServ'
@@ -39,17 +64,17 @@ module RedmineIrcNotifications
             end
 
             sock.puts "PRIVMSG #{@@channel} :#{message}"
-            sock.puts "QUIT"
-          end
-
-        rescue => e
-          logger.error "Error during IRC notification: #{e.message}"
-        ensure
-          if sock
-            until sock.eof? do
-              sock.gets
+          rescue => e
+            logger.error "Error during IRC notification: #{e.message}"
+          ensure
+            if sock
+              sock.puts "QUIT"
+              until sock.eof? do
+                sock.gets
+              end
+              sock.close
+              @@last_disconnect = Time.now.to_i
             end
-            sock.close
           end
         end
       end
@@ -63,6 +88,7 @@ module RedmineIrcNotifications
       @@user = options[Rails.env]['user']
       @@channel = options[Rails.env]['channel']
       @@nickserv = options[Rails.env]['nickserv']
+      @@throttle = options[Rails.env]['throttle']
     end
 
     def self.nick_available?(sock)
