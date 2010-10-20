@@ -8,6 +8,11 @@ Dispatcher.to_prepare :redmine_irc_notifications do
     Issue.send(:include, RedmineIrcNotifications::IssuePatch)
   end
 
+  require_dependency 'journal'
+  unless Journal.included_modules.include? RedmineIrcNotifications::JournalPatch
+    Journal.send(:include, RedmineIrcNotifications::JournalPatch)
+  end
+
   require_dependency 'message'
   unless Message.included_modules.include? RedmineIrcNotifications::MessagePatch
     Message.send(:include, RedmineIrcNotifications::MessagePatch)
